@@ -1,3 +1,5 @@
+from pprint import pprint
+
 import key_param
 from pymongo import MongoClient
 from langchain.agents import tool
@@ -12,6 +14,9 @@ from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.mongodb import MongoDBSaver
 import voyageai
 
+mongodb_client = MongoClient(key_param.mongodb_uri)
+DB_NAME = "ai_agents"
+
 def init_mongodb():
     """
     Initialize MongoDB client and collections.
@@ -19,16 +24,10 @@ def init_mongodb():
     Returns:
         tuple: MongoDB client, vector search collection, full documents collection.
     """
-    
-    mongodb_client = MongoClient(key_param.mongodb_uri)
-    
-    DB_NAME = "ai_agents"
-    
-    vs_collection = mongodb_client[DB_NAME]["chunked_docs"]
-    
+
+    chunked_collection = mongodb_client[DB_NAME]["chunked_docs"]
     full_collection = mongodb_client[DB_NAME]["full_docs"]
-    
-    return mongodb_client, vs_collection, full_collection
+    return chunked_collection, full_collection
 
 # Define the graph state type with messages that can accumulate
 class GraphState(TypedDict):
@@ -49,7 +48,7 @@ def generate_embedding(text: str) -> List[float]:
 
     embedding_model = voyageai.Client(api_key=key_param.voyage_api_key)
 
-    embedding = embedding_model.embed(text, model="voyage-3-lite", input_type="query").embeddings[0]
+    embedding = embedding_model.embed(text, model=key_param.embedding_model, input_type="query", output_dimension=1024).embeddings[0]
     
     return embedding
 
@@ -67,8 +66,9 @@ def get_information_for_question_answering(user_query: str) -> str:
     """
 
     query_embedding = generate_embedding(user_query)
+    print("query embedding:", len(query_embedding))
 
-    vs_collection = init_mongodb()[1]
+    chunked_collection = init_mongodb()[0]
     
     pipeline = [
         {
@@ -91,7 +91,7 @@ def get_information_for_question_answering(user_query: str) -> str:
         },
     ]
     
-    results = vs_collection.aggregate(pipeline)
+    results = chunked_collection.aggregate(pipeline)
     
     context = "\n\n".join([doc.get("body") for doc in results])
     
@@ -108,7 +108,7 @@ def get_page_content_for_summarization(user_query: str) -> str:
     Returns:
         str: The content of the documentation page.
     """
-    full_collection = init_mongodb()[2]
+    full_collection = init_mongodb()[1]
 
     query = {"title": user_query}
     
@@ -134,7 +134,7 @@ def agent(state: GraphState, llm_with_tools) -> GraphState:
     """
 
     messages = state["messages"]
-    
+    pprint(messages)
     result = llm_with_tools.invoke(messages)
     
     return {"messages": [result]}
@@ -153,6 +153,7 @@ def tool_node(state: GraphState, tools_by_name) -> GraphState:
     result = []
     
     tool_calls = state["messages"][-1].tool_calls
+    print("Tool calls:", tool_calls)
     
     for tool_call in tool_calls:
         tool = tools_by_name[tool_call["name"]]
@@ -212,6 +213,7 @@ def init_graph(llm_with_tools, tools_by_name, mongodb_client):
     checkpointer = MongoDBSaver(mongodb_client)
     
     return graph.compile(checkpointer=checkpointer)
+    # return graph.compile()
 
 def execute_graph(app, thread_id: str, user_input: str) -> None:
     """
@@ -239,14 +241,18 @@ def main():
     """
     Main function to initialize and execute the graph.
     """
-    mongodb_client, vs_collection, full_collection = init_mongodb()
-    
+
     tools = [
         get_information_for_question_answering,
         get_page_content_for_summarization
     ]
     
-    llm = ChatOpenAI(openai_api_key=key_param.openai_api_key, temperature=0, model="gpt-4o")
+    llm = ChatOpenAI(
+        model="gpt-5.4",
+        api_key=key_param.openai_api_key,
+        base_url="https://grove-gateway-prod.azure-api.net/grove-foundry-prod/openai/v1",
+        default_headers={"api-key": key_param.openai_api_key},
+    )
     
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -263,19 +269,20 @@ def main():
     )
     
     prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
-    
+
+    # Langchain API to attach tools to the llm?
     bind_tools = llm.bind_tools(tools)
-    
-    llm_with_tools = prompt | bind_tools
-    
+    llm_with_tools = prompt | bind_tools # Bind tools to the prompt?
+
     tools_by_name = {tool.name: tool for tool in tools}
-    
+
     app = init_graph(llm_with_tools, tools_by_name, mongodb_client)
-    
+
     # Ask a specific question about MongoDB
     execute_graph(app, "1", "What are some best practices for data backups in MongoDB?")
-   
+
     # Test the agent's memory capabilities
     execute_graph(app, "1", "What did I just ask?")
 
-main()
+if __name__ == "__main__":
+    main()

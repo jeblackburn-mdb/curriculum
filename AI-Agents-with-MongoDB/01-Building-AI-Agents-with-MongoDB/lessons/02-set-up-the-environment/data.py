@@ -31,7 +31,7 @@ for doc in docs["train"]:
 
 
 for chunked_doc in chunked_docs["train"]:
-    embedding = vo.embed(chunked_doc["body"], model="voyage-3-lite", input_type="document").embeddings[0]
+    embedding = vo.embed(chunked_doc["body"], model=key_param.embedding_model, input_type="document").embeddings[0]
     print(chunked_doc["body"])
     print(embedding)
     chunked_doc["embedding"] = embedding

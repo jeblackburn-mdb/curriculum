@@ -47,7 +47,7 @@ def generate_embedding(text: str) -> List[float]:
 
     embedding_model = voyageai.Client(api_key=key_param.voyage_api_key)
 
-    embedding = embedding_model.embed(text, model="voyage-3-lite", input_type="query").embeddings[0]
+    embedding = embedding_model.embed(text, model=key_param.embedding_model, input_type="query").embeddings[0]
     
     return embedding
 

@@ -1,7 +1,13 @@
+import time
+
+from pymongo.operations import SearchIndexModel
+
 import key_param
 from pymongo import MongoClient
 import voyageai
 from datasets import load_dataset
+
+from key_param import embedding_model
 
 docs = load_dataset("MongoDB/mongodb-docs")
 chunked_docs = load_dataset("MongoDB/mongodb-docs-embedded")
@@ -25,32 +31,47 @@ db = mongodb_client[DB_NAME]
 vs_collection = db[VS_COLLECTION_NAME]
 full_collection = db[FULL_COLLECTION_NAME]
 
-for doc in docs["train"]:
-    # Insert the document into the full_docs collection
-    full_collection.insert_one(doc)
+# for doc in docs["train"]:
+#     # Insert the document into the full_docs collection
+#     full_collection.insert_one(doc)
 
+# vs_collection.insert_many(docs["train"])
 
-for chunked_doc in chunked_docs["train"]:
-    embedding = vo.embed(chunked_doc["body"], model="voyage-3-lite", input_type="document").embeddings[0]
-    print(chunked_doc["body"])
-    print(embedding)
-    chunked_doc["embedding"] = embedding
-    vs_collection.insert_one(chunked_doc)
+# for chunked_doc in chunked_docs["train"]:
+#     embedding = vo.embed(chunked_doc["body"], model=embedding_model, input_type="document", output_dimension=1024).embeddings[0]
+#     print(chunked_doc["body"][:99])
+#     print(embedding[:9])
+#     chunked_doc["embedding"] = embedding
+#     vs_collection.insert_one(chunked_doc)
     
 
-model = {
-    "name": VS_INDEX_NAME,
-    "type": "vectorSearch",
-    "definition": {
-        "fields": [
-            {
-                "type": "vector",
-                "path": "embedding",
-                "numDimensions": 512,
-                "similarity": "cosine",
-            }
-        ]
-    },
-}
+# Create your index model, then create the search index
+search_index_model = SearchIndexModel(
+  definition={
+    "fields": [
+      {
+        "type": "vector",
+        "path": "embedding",
+        "numDimensions": 1024,
+        "similarity": "dotProduct"
+      }
+    ]
+  },
+  name="vector_index",
+  type="vectorSearch"
+)
+result = vs_collection.create_search_index(model=search_index_model)
+print("New search index named " + result + " is building.")
+# Wait for initial sync to complete
+print("Polling to check if the index is ready. This may take up to a minute.")
+predicate=None
+if predicate is None:
+  predicate = lambda index: index.get("queryable") is True
+while True:
+  indices = list(vs_collection.list_search_indexes(result))
+  if len(indices) and predicate(indices[0]):
+    break
+  time.sleep(5)
+print(result + " is ready for querying.")
 
-vs_collection.create_search_index(model=model) 
+# vs_collection.create_search_index(model=model)

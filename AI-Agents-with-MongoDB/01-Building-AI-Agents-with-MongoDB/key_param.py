@@ -1,3 +1,5 @@
-openai_api_key = "your_openai_api_key_here"
-voyage_api_key = "your_voyage_api_key_here" 
-mongodb_uri = "your_mongodb_connection_string_here"
+openai_api_key = "38db34ec78ac4f43b8c1688535bc5860"
+openai_base_url = "https://grove-gateway-prod.azure-api.net/grove-foundry-prod/openai/v1"
+voyage_api_key = "al-76EmQlzq8icE3-YAAXAHwB85klGyzxPCisPJYtw-_pO"
+mongodb_uri = "mongodb+srv://jonblackburn:Zg0MdfzngamqgEc0@psttcluster.5xw2h.mongodb.net/?appName=PSTTCluster"
+embedding_model = "voyage-4-large"
